@@ -53,37 +53,57 @@ class Hero extends GameObject {
     this.height = 75;
     this.type = "Hero";
     this.cooldown = 0;
-    this.life = 3; 
-    this.points = 0; 
+    this.life = 3;
+    this.points = 0;
+    this.meteorCooldown = 0; // meteor 쿨타임(ms). 0이면 발사 가능
+    this.speed = 5; // 이동 속도 추가
   }
 
   fire() {
     if (this.canFire()) {
-      gameObjects.push(new Laser(this.x + 45, this.y - 10)); 
-      this.cooldown = 500; 
+      gameObjects.push(new Laser(this.x + 45, this.y - 10));
+      this.cooldown = 500;
       let id = setInterval(() => {
         if (this.cooldown > 0) {
           this.cooldown -= 100;
         } else {
-          clearInterval(id); 
+          clearInterval(id);
         }
       }, 100);
     }
   }
 
   canFire() {
-    return this.cooldown === 0; 
+    return this.cooldown === 0;
+  }
+
+  fireMeteor() {
+    if (this.canFireMeteor()) {
+      gameObjects.push(new MeteorBig(this.x + 45 - 32, this.y - 40));
+      this.meteorCooldown = 10000; // 10초 쿨타임
+      let id = setInterval(() => {
+        if (this.meteorCooldown > 0) {
+          this.meteorCooldown -= 1000;
+        } else {
+          clearInterval(id);
+        }
+      }, 1000);
+    }
+  }
+
+  canFireMeteor() {
+    return this.meteorCooldown === 0;
   }
 
   decrementLife() {
-    this.life--; 
+    this.life--;
     if (this.life === 0) {
-      this.dead = true; 
+      this.dead = true;
     }
   }
 
   incrementPoints() {
-    this.points += 100; 
+    this.points += 100;
   }
 }
 
@@ -105,14 +125,52 @@ class Laser extends GameObject {
   }
 }
 
+// UFO 레이저
+class UFOLaser extends GameObject {
+  constructor(x, y, width = 15, height = 33) {
+    super(x, y);
+    this.width = width;
+    this.height = height;
+    this.type = "UFOLaser";
+    this.img = ufoLaserImg;
+    let id = setInterval(() => {
+      if (this.y < canvas.height) {
+        this.y += 10;
+      } else {
+        this.dead = true;
+        clearInterval(id);
+      }
+    }, 100);
+  }
+}
+
+// MeteorBig (영웅이 F키로 발사하는 강력한 투사체)
+class MeteorBig extends GameObject {
+  constructor(x, y) {
+    super(x, y);
+    this.width = 64;
+    this.height = 64;
+    this.type = "MeteorBig";
+    this.img = meteorBigImg;
+    let id = setInterval(() => {
+      if (this.y > 0) {
+        this.y -= 10;
+      } else {
+        this.dead = true;
+        clearInterval(id);
+      }
+    }, 100);
+  }
+}
+
 class Enemy extends GameObject {
   constructor(x, y) {
     super(x, y);
     this.width = 98;
     this.height = 50;
     this.type = "Enemy";
-    this.exploding = false; 
-    this.speedY = 5; 
+    this.exploding = false;
+    this.speedY = 5;
 
     this.intervalId = setInterval(() => {
       if (!this.exploding) {
@@ -131,8 +189,6 @@ class Enemy extends GameObject {
   }
 }
 
-let helperIntervals = [];
-
 class HelperShip extends GameObject {
   constructor(xOffset, yOffset) {
     super(0, 0);
@@ -144,19 +200,67 @@ class HelperShip extends GameObject {
 
     this.fireInterval = setInterval(() => {
       if (!this.dead) {
-        gameObjects.push(new Laser(this.x + this.width / 2 - 3, this.y, 6, 22));
+        gameObjects.push(
+          new Laser(this.x + this.width / 2 - 3, this.y, 6, 22)
+        );
       } else {
         clearInterval(this.fireInterval);
       }
     }, 3000);
-
-    // 생성된 interval을 전역 배열에 등록
-    helperIntervals.push(this.fireInterval);
   }
 
   updatePosition(heroX, heroY) {
     this.x = heroX + this.xOffset;
     this.y = heroY + this.yOffset;
+  }
+}
+
+class UFO extends GameObject {
+  constructor(x, y) {
+    super(x, y);
+    this.width = 128;
+    this.height = 64;
+    this.type = "UFO";
+    this.health = 70;
+
+    // 이동 패턴용 변수들
+    this.initialX = x; 
+    // 이동 패턴: 중심(0), 왼(-25), 오른(+50), 다시 왼(-25) => 총 4단계
+    this.movementPattern = [0, -100, +150, -100]; 
+    this.movementIndex = 0; 
+
+    this.fireInterval = setInterval(() => {
+      if (!this.dead) {
+        // UFO 레이저 발사
+        gameObjects.push(new UFOLaser(this.x + this.width/2 - 4, this.y + this.height));
+      } else {
+        clearInterval(this.fireInterval);
+        clearInterval(this.moveInterval);
+      }
+    }, 2000); // 2초마다 레이저 발사
+
+    // 위치 이동 Interval (5초마다)
+    this.moveInterval = setInterval(() => {
+      if (this.dead) {
+        clearInterval(this.moveInterval);
+        return;
+      }
+      // 다음 패턴으로 이동
+      this.movementIndex = (this.movementIndex + 1) % this.movementPattern.length;
+      // 현재 패턴에 맞춰 위치 이동
+      let offset = this.movementPattern[this.movementIndex];
+      // offset을 기반으로 초기 위치 대비로만 이동
+      this.x = this.initialX + offset;
+    }, 5000); // 5초마다 위치 변경
+  }
+
+  takeDamage() {
+    this.health -= 1;
+    if (this.health <= 0) {
+      this.dead = true;
+      // UFO가 죽으면 이동 Interval 정리
+      clearInterval(this.moveInterval);
+    }
   }
 }
 
@@ -166,18 +270,24 @@ const Messages = {
   KEY_EVENT_LEFT: "KEY_EVENT_LEFT",
   KEY_EVENT_RIGHT: "KEY_EVENT_RIGHT",
   KEY_EVENT_SPACE: "KEY_EVENT_SPACE",
+  KEY_EVENT_F: "KEY_EVENT_F",
   COLLISION_ENEMY_LASER: "COLLISION_ENEMY_LASER",
   COLLISION_ENEMY_HERO: "COLLISION_ENEMY_HERO",
   GAME_END_LOSS: "GAME_END_LOSS",
   GAME_END_WIN: "GAME_END_WIN",
   KEY_EVENT_ENTER: "KEY_EVENT_ENTER",
+  STAGE_CLEARED: "STAGE_CLEARED",
+  UFO_HIT: "UFO_HIT"
 };
 
 let heroImg,
   enemyImg,
   laserImg,
-  explosionImg, 
+  explosionImg,
   lifeImg,
+  ufoImg,
+  ufoLaserImg,
+  meteorBigImg,
   canvas,
   ctx,
   gameObjects = [],
@@ -187,6 +297,13 @@ let heroImg,
   eventEmitter = new EventEmitter();
 
 let gameLoopId = null;
+let stage = 1;
+let stageCleared = false;
+let ufoSpawned = false;
+
+// 추가: 스피드 부스트 관련 전역 변수
+let canUseSpeedBoost = true;   // 스피드 부스트 사용 가능 여부
+let speedBoostActive = false;  // 스피드 부스트가 현재 활성화 중인지 여부
 
 function loadTexture(path) {
   return new Promise((resolve) => {
@@ -199,44 +316,87 @@ function loadTexture(path) {
 }
 
 function initGame() {
+  stage = 1;
+  stageCleared = false;
+  ufoSpawned = false;
   gameObjects = [];
-  createEnemies();
+  eventEmitter.clear();
+
+  createStageEnemies();
   createHeroAndHelpers();
 
   eventEmitter.on(Messages.KEY_EVENT_UP, () => {
-    hero.y -= 5;
+    hero.y -= hero.speed; // hero.speed로 변경
   });
   eventEmitter.on(Messages.KEY_EVENT_DOWN, () => {
-    hero.y += 5;
+    hero.y += hero.speed; // hero.speed로 변경
   });
   eventEmitter.on(Messages.KEY_EVENT_LEFT, () => {
-    hero.x -= 5;
+    hero.x -= hero.speed; // hero.speed로 변경
   });
   eventEmitter.on(Messages.KEY_EVENT_RIGHT, () => {
-    hero.x += 5;
+    hero.x += hero.speed; // hero.speed로 변경
   });
   eventEmitter.on(Messages.KEY_EVENT_SPACE, () => {
     if (hero.canFire()) {
       hero.fire();
     }
   });
-  eventEmitter.on(Messages.COLLISION_ENEMY_LASER, (_, { first, second }) => {
-    first.dead = true; 
-    second.dead = true; 
-    hero.incrementPoints(); 
-
-    if (isEnemiesDead()) {
-      eventEmitter.emit(Messages.GAME_END_WIN);
+  eventEmitter.on(Messages.KEY_EVENT_F, () => {
+    if (hero.canFireMeteor()) {
+      hero.fireMeteor();
     }
   });
+
+  // c키 이벤트 처리
+  eventEmitter.on("KEY_EVENT_C", () => {
+    // 스피드 부스트 발동 조건 체크
+    if (canUseSpeedBoost && !speedBoostActive) {
+      hero.speed = 10;
+      speedBoostActive = true;
+      canUseSpeedBoost = false;
+
+      // 5초 후 속도 원상복귀
+      setTimeout(() => {
+        hero.speed = 5;
+        speedBoostActive = false;
+      }, 5000);
+
+      // 15초 후 다시 스피드 부스트 사용 가능
+      setTimeout(() => {
+        canUseSpeedBoost = true;
+      }, 15000);
+    }
+  });
+
+  eventEmitter.on(Messages.COLLISION_ENEMY_LASER, (_, { first, second }) => {
+    // MeteorBig이 아닐 때만 발사체 제거
+    if (first.type !== "MeteorBig") {
+      first.dead = true; 
+    }
+  
+    if (second.type === "Enemy") {
+      second.dead = true; 
+      hero.incrementPoints();
+    } else if (second.type === "UFO") {
+      eventEmitter.emit(Messages.UFO_HIT, { ufo: second });
+    }
+    checkStageClear();
+  });
+
   eventEmitter.on(Messages.COLLISION_ENEMY_HERO, (_, { enemy }) => {
-    enemy.dead = true; 
-    hero.decrementLife(); 
+    enemy.dead = true;
+    hero.decrementLife();
     if (isHeroDead())  {
       eventEmitter.emit(Messages.GAME_END_LOSS);
-      return; 
+      return;
     }
-    if (isEnemiesDead()) {
+    checkStageClear();
+  });
+
+  eventEmitter.on(Messages.UFO_HIT, (_, { ufo }) => {
+    ufo.takeDamage();
+    if (ufo.dead) {
       eventEmitter.emit(Messages.GAME_END_WIN);
     }
   });
@@ -249,8 +409,18 @@ function initGame() {
     endGame(false);
   });
 
+  eventEmitter.on(Messages.STAGE_CLEARED, () => {
+    stageCleared = true;
+    showStageClearMessage();
+  });
+
   eventEmitter.on(Messages.KEY_EVENT_ENTER, () => {
-    resetGame();
+    if (stageCleared && stage === 1) {
+      stage = 2;
+      startNextStage();
+    } else if (stageCleared && stage === 2 && ufoSpawned) {
+      resetGame();
+    }
   });
 }
 
@@ -259,28 +429,64 @@ function createHeroAndHelpers() {
   hero.img = heroImg;
   gameObjects.push(hero);
 
-  helper1 = new HelperShip(-70, 20); 
+  helper1 = new HelperShip(-70, 20);
   helper1.img = heroImg;
   gameObjects.push(helper1);
 
-  helper2 = new HelperShip(120, 20); 
+  helper2 = new HelperShip(120, 20);
   helper2.img = heroImg;
   gameObjects.push(helper2);
 }
 
-function createEnemies() {
-  const MONSTER_TOTAL = 5;
-  const MONSTER_WIDTH = MONSTER_TOTAL * 98;
-  const START_X = (canvas.width - MONSTER_WIDTH) / 2;
-  const STOP_X = START_X + MONSTER_WIDTH;
+function createStageEnemies() {
+  if (stage === 1) {
+    // 기존 스테이지1 적 배치 로직 그대로
+    const MONSTER_TOTAL = 5;
+    const MONSTER_WIDTH = MONSTER_TOTAL * 98;
+    const START_X = (canvas.width - MONSTER_WIDTH) / 2;
+    const STOP_X = START_X + MONSTER_WIDTH;
 
-  for (let x = START_X; x < STOP_X; x += 98) {
-    for (let y = 0; y < 50 * 5; y += 50) {
-      const enemy = new Enemy(x, y);
-      enemy.img = enemyImg;
-      gameObjects.push(enemy);
+    for (let x = START_X; x < STOP_X; x += 98) {
+      for (let y = 0; y < 50 * 5; y += 50) {
+        const enemy = new Enemy(x, y);
+        enemy.img = enemyImg;
+        gameObjects.push(enemy);
+      }
     }
+  } else if (stage === 2) {
+    // 동심원 형태로 여러 레이어를 만들어 적을 배치
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 4;
+
+    // 원하는 만큼 레이어를 지정 (예: 3개의 레이어)
+    // 각 레이어마다 적의 수(count)와 반경(radius)를 지정
+    const rings = [
+      { count: 15, radius: 200 }, // 가장 바깥쪽 원
+      { count: 10, radius: 130 }, // 중간 원
+      { count: 5,  radius: 60 }   // 가장 안쪽 원
+    ];
+
+    // 각 레이어별로 적 배치
+    rings.forEach(ring => {
+      for (let i = 0; i < ring.count; i++) {
+        const angle = (2 * Math.PI / ring.count) * i;
+        const x = centerX + ring.radius * Math.cos(angle);
+        const y = centerY + ring.radius * Math.sin(angle);
+        const enemy = new Enemy(x - 98 / 2, y - 50 / 2);
+        enemy.img = enemyImg;
+        gameObjects.push(enemy);
+      }
+    });
   }
+}
+
+function spawnUFO() {
+  const ufoX = (canvas.width / 2) - 64;
+  const ufoY = 50;
+  let ufo = new UFO(ufoX, ufoY);
+  ufo.img = ufoImg;
+  gameObjects.push(ufo);
+  ufoSpawned = true;
 }
 
 function drawGameObjects(ctx) {
@@ -288,19 +494,29 @@ function drawGameObjects(ctx) {
 }
 
 function updateGameObjects() {
+  if (stageCleared) return;
+
   const enemies = gameObjects.filter((go) => go.type === "Enemy");
-  const lasers = gameObjects.filter((go) => go.type === "Laser");
+  const lasers = gameObjects.filter((go) => go.type === "Laser" || go.type === "MeteorBig");
+  const ufo = gameObjects.find((go) => go.type === "UFO" && !go.dead);
+  const ufoLasers = gameObjects.filter((go) => go.type === "UFOLaser");
 
   helper1.updatePosition(hero.x, hero.y);
   helper2.updatePosition(hero.x, hero.y);
 
-  enemies.forEach((enemy) => {
+  // UFO 레이저와 영웅 충돌 체크
+  ufoLasers.forEach((ul) => {
     const heroRect = hero.rectFromGameObject();
-    if (intersectRect(heroRect, enemy.rectFromGameObject())) {
-      eventEmitter.emit(Messages.COLLISION_ENEMY_HERO, { enemy });
+    if (intersectRect(heroRect, ul.rectFromGameObject())) {
+      ul.dead = true;
+      hero.decrementLife();
+      if (isHeroDead()) {
+        eventEmitter.emit(Messages.GAME_END_LOSS);
+      }
     }
   });
 
+  // 레이저 / 메테오 빅 vs 적/UFO
   lasers.forEach((l) => {
     enemies.forEach((m) => {
       if (intersectRect(l.rectFromGameObject(), m.rectFromGameObject())) {
@@ -310,9 +526,28 @@ function updateGameObjects() {
         });
       }
     });
+    if (ufo && intersectRect(l.rectFromGameObject(), ufo.rectFromGameObject())) {
+      eventEmitter.emit(Messages.COLLISION_ENEMY_LASER, {
+        first: l,
+        second: ufo,
+      });
+    }
+  });
+
+  // 적 vs 영웅
+  enemies.forEach((enemy) => {
+    const heroRect = hero.rectFromGameObject();
+    if (intersectRect(heroRect, enemy.rectFromGameObject())) {
+      eventEmitter.emit(Messages.COLLISION_ENEMY_HERO, { enemy });
+    }
   });
 
   gameObjects = gameObjects.filter((go) => !go.dead);
+
+  // 2스테이지에서 적 모두 처치 후 UFO 미출현시 UFO 스폰
+  if (stage === 2 && !ufoSpawned && isEnemiesDead() && !stageCleared) {
+    spawnUFO();
+  }
 }
 
 function drawLife() {
@@ -342,7 +577,6 @@ function intersectRect(r1, r2) {
   );
 }
 
-// 추가된 함수들
 function isHeroDead() {
   return hero.life <= 0;
 }
@@ -350,6 +584,14 @@ function isHeroDead() {
 function isEnemiesDead() {
   const enemies = gameObjects.filter((go) => go.type === "Enemy" && !go.dead);
   return enemies.length === 0;
+}
+
+function checkStageClear() {
+  if (stage === 1) {
+    if (isEnemiesDead() && !stageCleared && !ufoSpawned) {
+      eventEmitter.emit(Messages.STAGE_CLEARED);
+    }
+  }
 }
 
 function displayMessage(message, color = "red") {
@@ -361,11 +603,6 @@ function displayMessage(message, color = "red") {
 
 function endGame(win) {
   clearInterval(gameLoopId);
-
-  // HelperShip에서 사용한 인터벌 모두 정리
-  helperIntervals.forEach((id) => clearInterval(id));
-  helperIntervals = [];
-  
   setTimeout(() => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = "black";
@@ -375,29 +612,49 @@ function endGame(win) {
         "Victory!!! Pew Pew... - Press [Enter] to start a new game Captain Pew Pew",
         "green"
       );
+      stageCleared = true;
     } else {
       displayMessage(
         "You died !!! Press [Enter] to start a new game Captain Pew Pew"
       );
+      stageCleared = true;
     }
   }, 200);
+}
+
+function showStageClearMessage() {
+  clearInterval(gameLoopId);
+  setTimeout(() => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    displayMessage("Stage Cleared! Press [Enter] to continue...", "yellow");
+  }, 200);
+}
+
+function startNextStage() {
+  stageCleared = false;
+  gameObjects = [hero, helper1, helper2];
+  createStageEnemies();
+  gameLoopId = setInterval(gameLoop, 100);
 }
 
 function resetGame() {
   if (gameLoopId) {
     clearInterval(gameLoopId);
-    eventEmitter.clear(); 
-    initGame(); 
-    gameLoopId = setInterval(() => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "black";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      drawPoints();
-      drawLife();
-      updateGameObjects();
-      drawGameObjects(ctx);
-    }, 100);
   }
+  initGame();
+  gameLoopId = setInterval(gameLoop, 100);
+}
+
+function gameLoop() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "black";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawPoints();
+  drawLife();
+  updateGameObjects();
+  drawGameObjects(ctx);
 }
 
 window.onload = async () => {
@@ -407,20 +664,14 @@ window.onload = async () => {
   heroImg = await loadTexture("assets/player.png");
   enemyImg = await loadTexture("assets/enemyShip.png");
   laserImg = await loadTexture("assets/laserRed.png");
-  explosionImg = await loadTexture("assets/laserGreenShot.png"); 
-  lifeImg = await loadTexture("assets/life.png"); 
+  explosionImg = await loadTexture("assets/laserGreenShot.png");
+  lifeImg = await loadTexture("assets/life.png");
+  ufoImg = await loadTexture("assets/enemyUFO.png");
+  ufoLaserImg = await loadTexture("assets/laserGreen.png");
+  meteorBigImg = await loadTexture("assets/meteorBig.png");
 
   initGame();
-
-  gameLoopId = setInterval(() => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "black";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    drawGameObjects(ctx);
-    updateGameObjects();
-    drawPoints();
-    drawLife();
-  }, 100);
+  gameLoopId = setInterval(gameLoop, 100);
 
   window.addEventListener("keyup", (evt) => {
     if (evt.key === "ArrowUp") {
@@ -435,6 +686,10 @@ window.onload = async () => {
       eventEmitter.emit(Messages.KEY_EVENT_SPACE);
     } else if (evt.key === "Enter") {
       eventEmitter.emit(Messages.KEY_EVENT_ENTER);
+    } else if (evt.key === "f" || evt.key === "F") {
+      eventEmitter.emit(Messages.KEY_EVENT_F);
+    } else if (evt.key === "c" || evt.key === "C") {
+      eventEmitter.emit("KEY_EVENT_C");
     }
   });
 };
